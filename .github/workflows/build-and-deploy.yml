@@ -1,0 +1,59 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "lib/**"
+      - "scripts/**"
+      - "website/**"
+      - "templates/**"
+      - "data/**"
+      - "package.json"
+      - ".github/workflows/build-and-deploy.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 构建项目
+        run: |
+          npm run build
+          npm run website
+
+      - name: 配置 SSH 私钥
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.USAARMLOGIN_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: 打包站点文件
+        run: |
+          # 仅打包生成的 website 目录
+          tar czf "$RUNNER_TEMP/superchess-site.tar.gz" -C website .
+
+      - name: 上传并发布到测试服务器
+        run: |
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 ubuntu@144.24.60.0 \
+            'cat > /tmp/superchess-site.tar.gz' < "$RUNNER_TEMP/superchess-site.tar.gz"
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 22 ubuntu@144.24.60.0 '
+            sudo mkdir -p /var/admin/superchess && \
+            sudo find /var/admin/superchess -mindepth 1 -maxdepth 1 -exec rm -rf {} + && \
+            sudo tar xzf /tmp/superchess-site.tar.gz -C /var/admin/superchess && \
+            rm -f /tmp/superchess-site.tar.gz
+          '
